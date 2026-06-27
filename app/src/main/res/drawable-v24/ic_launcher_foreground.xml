@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center double arrow design representing sending/receiving -->
+    <path
+        android:fillColor="#F05A28"
+        android:pathData="M54,34L34,54L54,74L59.6,68.4L49.2,58L74,58L74,50L49.2,50L59.6,39.6L54,34Z" />
+    <path
+        android:fillColor="#FFA133"
+        android:pathData="M54,74L74,54L54,34L48.4,39.6L58.8,50L34,50L34,58L58.8,58L48.4,68.4L54,74Z" />
+</vector>

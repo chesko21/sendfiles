@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">SendFile</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_files">Files</string>
+    <string name="nav_transfer">Transfer</string>
+    <string name="nav_devices">Devices</string>
+    <string name="btn_send">Send</string>
+    <string name="btn_receive">Receive</string>
+    <string name="btn_browse">Browse</string>
+    <string name="btn_history">History</string>
+    <string name="system_ready">SYSTEM READY</string>
+    <string name="network_active">Local Network Active</string>
+    <string name="recent_transfers">Recent Transfers</string>
+    <string name="see_all">SEE ALL</string>
+    <string name="search_hint">Search for files...</string>
+    <string name="storage_available">STORAGE AVAILABLE</string>
+    <string name="connected_devices">CONNECTED DEVICES</string>
+</resources>

@@ -1,0 +1,40 @@
+# Gradle and IDE
+*.iml
+.gradle
+/local.properties
+/.idea/
+/build
+/captures
+.externalNativeBuild
+.cxx
+
+# Secrets and Sensitive files (SANGAT RAHASIA)
+local.properties
+secrets.properties
+signing.properties
+*.jks
+*.keystore
+*.p12
+google-services.json
+
+# Built artifacts
+bin
+gen
+out
+*.apk
+*.aar
+*.bundle
+
+# Log Files
+*.log
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Other temp files
+.navigation/
+*.swp
+*~
+.env
+.agent/
