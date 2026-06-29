@@ -1,11 +1,13 @@
 package com.chesko.sendfiles.ui
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
@@ -13,6 +15,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chesko.sendfiles.data.AppDatabase
@@ -27,26 +30,51 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.math.log10
+import kotlin.math.pow
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val transferDao = database.transferDao()
     private val transferEngine = TransferEngine(application)
 
-    private val _transferEvents = MutableSharedFlow<Unit>()
-    val transferEvents: SharedFlow<Unit> = _transferEvents.asSharedFlow()
-
     val history: StateFlow<List<TransferRecord>> = transferDao.getAllTransfers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activeTransfers: StateFlow<List<TransferRecord>> = history.map { list ->
-        list.filter { it.status == TransferStatus.IN_PROGRESS || it.status == TransferStatus.PENDING }
+        list.filter { 
+            (it.status == TransferStatus.IN_PROGRESS) || 
+            (it.status == TransferStatus.PENDING) || 
+            (it.status == TransferStatus.FAILED) 
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val progressMap = mutableStateMapOf<Long, Float>()
     
+    fun retryTransfer(record: TransferRecord) {
+        val uriStr = record.fileUri ?: return
+        val hostStr = record.receiverAddress ?: return
+        val port = record.receiverPort ?: return
+        val uri = uriStr.toUri()
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val device = Device(
+                    name = record.receiverName,
+                    host = java.net.InetAddress.getByName(hostStr),
+                    port = port,
+                )
+                transferEngine.sendFile(device, uri, record.id) { id, progress ->
+                    progressMap[id] = progress
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Retry failed", e)
+                transferDao.updateStatus(record.id, TransferStatus.FAILED)
+            }
+        }
+    }
+    
     private val _deviceFiles = MutableStateFlow<List<FileData>>(emptyList())
-    val deviceFiles: StateFlow<List<FileData>> = _deviceFiles.asStateFlow()
 
     private val _selectedFiles = MutableStateFlow<Set<FileData>>(emptySet())
     val selectedFiles: StateFlow<Set<FileData>> = _selectedFiles.asStateFlow()
@@ -57,7 +85,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentPath = MutableStateFlow(Environment.getExternalStorageDirectory().absolutePath)
     val currentPath: StateFlow<String> = _currentPath.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
+    private val _isLoading = MutableStateFlow(value = false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
@@ -81,7 +109,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val directory = File(path)
             if (directory.exists() && directory.isDirectory) {
                 _currentPath.value = path
-                val files = directory.listFiles()?.map { file ->
+                val files = directory.listFiles()?.asSequence()?.map { file ->
                     FileData(
                         name = file.name,
                         size = if (file.isDirectory) "${file.listFiles()?.size ?: 0} items" else formatFileSize(file.length()),
@@ -92,7 +120,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         lastModified = file.lastModified(),
                         isApk = file.name.endsWith(".apk", ignoreCase = true)
                     )
-                }?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList()
+                }?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))?.toList() ?: emptyList()
                 _deviceFiles.value = files
             }
             _isLoading.value = false
@@ -185,10 +213,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return files
     }
 
+    @SuppressLint("QueryPermissionsNeeded")
     private fun getInstalledAppsList(): List<FileData> {
         val apps = mutableListOf<FileData>()
         val pm = getApplication<Application>().packageManager
-        val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        
+        val packages = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong()))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        }
 
         for (app in packages) {
             if (pm.getLaunchIntentForPackage(app.packageName) != null) {
@@ -224,7 +259,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val selectionArgs = if (isDocuments) {
             listOf("pdf", "doc", "docx", "txt", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "7z", "apk")
-                .map { "%.${it}" }.toTypedArray()
+                .map { "%.$it" }.toTypedArray()
         } else null
 
         getApplication<Application>().contentResolver.query(
@@ -311,19 +346,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         clearSelection()
         clearPendingUris()
         
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             urisToSend.forEach { uri ->
-                transferEngine.sendFile(device, uri) { progress ->
-                    progressMap[0L] = progress
+                try {
+                    transferEngine.sendFile(device, uri) { id, progress ->
+                        progressMap[id] = progress
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Failed to send URI: $uri", e)
                 }
             }
 
             filesToSend.forEach { fileData ->
                 val file = File(fileData.path)
                 if (file.exists()) {
-                    val uri = getUriForFile(file)
-                    transferEngine.sendFile(device, uri) { progress ->
-                        progressMap[0L] = progress
+                    try {
+                        val uri = getUriForFile(file)
+                        transferEngine.sendFile(device, uri) { id, progress ->
+                            progressMap[id] = progress
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Failed to send file: ${fileData.path}", e)
                     }
                 }
             }
@@ -331,8 +374,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun getColorKeyForFile(fileName: String): String {
-        val extension = fileName.substringAfterLast('.', "").lowercase()
-        return when (extension) {
+        return when (fileName.substringAfterLast('.', "").lowercase()) {
             "mp4", "mkv", "avi", "mov" -> "primary"
             "jpg", "jpeg", "png", "webp", "gif" -> "secondary"
             "pdf", "doc", "docx", "txt", "xls", "xlsx", "ppt", "pptx" -> "tertiary"
@@ -346,6 +388,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         list.take(3).map { record ->
             val progress = progressMap[record.id] ?: if (record.status == TransferStatus.COMPLETED) 1f else 0f
             TransferItemData(
+                id = record.id,
                 title = record.fileName,
                 subtitle = when (record.direction) {
                     TransferDirection.SEND -> "To ${record.receiverName}"
@@ -363,8 +406,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun formatFileSize(size: Long): String {
         if (size <= 0) return "0 B"
         val units = arrayOf("B", "KB", "MB", "GB", "TB")
-        val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
-        return String.format(java.util.Locale.US, "%.1f %s", size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+        val digitGroups = (log10(size.toDouble()) / log10(1024.0)).toInt()
+        return String.format(java.util.Locale.US, "%.1f %s", size / 1024.0.pow(digitGroups.toDouble()), units[digitGroups])
     }
 
     private fun getIconForFile(fileName: String): androidx.compose.ui.graphics.vector.ImageVector {
@@ -413,7 +456,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         
         try {
             getApplication<Application>().startActivity(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
         }
     }
 
@@ -430,7 +473,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         
         try {
             getApplication<Application>().startActivity(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
 
         }
     }
@@ -455,7 +498,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         
         try {
             getApplication<Application>().startActivity(chooser)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
 
         }
     }
@@ -476,7 +519,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "${getApplication<Application>().packageName}.provider",
                 file
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Uri.fromFile(file)
         }
     }
@@ -495,19 +538,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    init {
-        loadDeviceFiles()
+    private val _isReceiveMode = MutableStateFlow(false)
+
+    fun startReceiveMode(nsdHelper: com.chesko.sendfiles.network.NsdHelper) {
+        if (_isReceiveMode.value) return
+        _isReceiveMode.value = true
+        
         viewModelScope.launch {
-            transferEngine.startServer(8888) { progress ->
-                viewModelScope.launch { _transferEvents.emit(Unit) }
+            nsdHelper.registerService(com.chesko.sendfiles.util.Constants.DEFAULT_PORT)
+            transferEngine.startServer(com.chesko.sendfiles.util.Constants.DEFAULT_PORT) { id, progress ->
+                progressMap[id] = progress
             }
         }
     }
 
-    fun sendFile(device: Device, uri: Uri) {
-        viewModelScope.launch {
-            transferEngine.sendFile(device, uri) { progress ->
-            }
-        }
+    fun stopReceiveMode(nsdHelper: com.chesko.sendfiles.network.NsdHelper) {
+        _isReceiveMode.value = false
+        nsdHelper.unregisterService()
+        transferEngine.stopServer()
+    }
+
+    init {
+        loadDeviceFiles()
     }
 }

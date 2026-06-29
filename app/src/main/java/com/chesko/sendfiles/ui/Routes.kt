@@ -9,9 +9,11 @@ sealed interface Route : NavKey {
     @Serializable
     data object Files : Route
     @Serializable
-    data object Transfers : Route
+    data class Transfers(val isReceiveMode: Boolean = false) : Route
     @Serializable
     data object Devices : Route
     @Serializable
     data object History : Route
+    @Serializable
+    data object Settings : Route
 }

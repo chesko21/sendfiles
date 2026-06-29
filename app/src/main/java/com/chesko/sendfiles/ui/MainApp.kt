@@ -2,18 +2,28 @@ package com.chesko.sendfiles.ui
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -30,34 +40,238 @@ import com.chesko.sendfiles.ui.screens.HistoryScreen
 import com.chesko.sendfiles.ui.screens.HomeScreen
 import com.chesko.sendfiles.ui.screens.TransfersScreen
 import com.chesko.sendfiles.ui.screens.TvHomeScreen
-import com.chesko.sendfiles.util.Constants
+import com.chesko.sendfiles.ui.screens.TvNavItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainApp(
     nsdHelper: NsdHelper,
-    onRequestStoragePermission: () -> Unit = {}
+    onRequestStoragePermission: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val viewModel: MainViewModel = viewModel()
+
+    LaunchedEffect(Unit) {
+        viewModel.startReceiveMode(nsdHelper)
+    }
+
     val isTv = remember {
         context.packageManager.hasSystemFeature("android.software.leanback")
     }
 
     if (isTv) {
-        val viewModel: MainViewModel = viewModel()
-        val pickerLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent()
-        ) { uri: android.net.Uri? ->
-            uri?.let {
-                viewModel.setPendingUri(it)
+        val backStack = rememberNavBackStack(Route.Home)
+        val currentRoute = backStack.lastOrNull() ?: Route.Home
+        
+        val homeRequester = remember { FocusRequester() }
+        val filesRequester = remember { FocusRequester() }
+        val transfersRequester = remember { FocusRequester() }
+        val historyRequester = remember { FocusRequester() }
+        val settingsRequester = remember { FocusRequester() }
+        val contentRequester = remember { FocusRequester() }
+        
+        var isSidebarFocused by remember { mutableStateOf(value = false) }
+        val activeTransfers by viewModel.activeTransfers.collectAsState()
+        
+        val showSidebar = currentRoute is Route.Home
+        
+        LaunchedEffect(activeTransfers) {
+            if (activeTransfers.isNotEmpty() && (currentRoute !is Route.Transfers)) {
+                backStack.add(Route.Transfers())
             }
         }
-        TvHomeScreen(
-            nsdHelper = nsdHelper,
-            onSendClick = { pickerLauncher.launch(Constants.MIME_TYPE_ALL) }
-        )
+
+        BackHandler(enabled = backStack.size > 1) {
+            backStack.removeAt(backStack.size - 1)
+        }
+
+        LaunchedEffect(currentRoute) {
+            if (isSidebarFocused && showSidebar) {
+                homeRequester.requestFocus()
+            }
+        }
+
+        Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            if (showSidebar) {
+                Column(
+                    modifier = Modifier
+                        .width(140.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .onFocusEvent { isSidebarFocused = it.hasFocus }
+                        .focusProperties { 
+                            right = contentRequester 
+                        }
+                        .padding(vertical = 32.dp, horizontal = 12.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 32.dp, start = 8.dp)
+                    )
+                    
+                    TvNavItem(
+                        label = stringResource(R.string.nav_home), 
+                        icon = Icons.Rounded.Home, 
+                        isSelected = true,
+                        modifier = Modifier.focusRequester(homeRequester)
+                    ) { 
+                        // Already on home if sidebar is shown
+                    }
+                    TvNavItem(
+                        label = stringResource(R.string.nav_files), 
+                        icon = Icons.Rounded.Folder, 
+                        isSelected = false,
+                        modifier = Modifier.focusRequester(filesRequester)
+                    ) { 
+                        backStack.add(Route.Files) 
+                    }
+                    TvNavItem(
+                        label = stringResource(R.string.nav_transfer), 
+                        icon = Icons.Rounded.Speed, 
+                        isSelected = false,
+                        modifier = Modifier.focusRequester(transfersRequester)
+                    ) { 
+                        backStack.add(Route.Transfers()) 
+                    }
+                    TvNavItem(
+                        label = stringResource(R.string.btn_history), 
+                        icon = Icons.Rounded.History, 
+                        isSelected = false,
+                        modifier = Modifier.focusRequester(historyRequester)
+                    ) { 
+                        backStack.add(Route.History) 
+                    }
+                    
+                    Spacer(modifier = Modifier.weight(1f))
+                    
+                    TvNavItem(
+                        label = stringResource(R.string.nav_settings), 
+                        icon = Icons.Rounded.Settings, 
+                        isSelected = false,
+                        modifier = Modifier.focusRequester(settingsRequester)
+                    ) { 
+                        backStack.add(Route.Settings) 
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(contentRequester)
+                    .focusProperties {
+                        if (showSidebar) {
+                            left = homeRequester
+                        }
+                    }
+            ) {
+                NavDisplay(
+                    backStack = backStack,
+                    modifier = Modifier.fillMaxSize(),
+                    onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) }
+                ) { key ->
+                    when (key) {
+                        is Route.Home -> {
+                            NavEntry(key) {
+                                TvHomeScreen(
+                                    nsdHelper = nsdHelper,
+                                    onSendClick = { backStack.add(Route.Files) },
+                                    onReceiveClick = { backStack.add(Route.Transfers(isReceiveMode = true)) },
+                                    onHistoryClick = { backStack.add(Route.History) },
+                                    viewModel = viewModel
+                                )
+                            }
+                        }
+                        is Route.Files -> {
+                            NavEntry(key) {
+                                FilesScreen(
+                                    onNext = { backStack.add(Route.Devices) },
+                                    onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) },
+                                    onRequestStoragePermission = onRequestStoragePermission,
+                                    viewModel = viewModel
+                                )
+                            }
+                        }
+                        is Route.Transfers -> {
+                            NavEntry(key) {
+                                TransfersScreen(
+                                    onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) },
+                                    nsdHelper = nsdHelper,
+                                    isReceiveMode = key.isReceiveMode,
+                                    viewModel = viewModel
+                                )
+                            }
+                        }
+                        is Route.History -> {
+                            NavEntry(key) {
+                                val history by viewModel.history.collectAsState()
+                                HistoryScreen(
+                                    history = history, 
+                                    onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) },
+                                    viewModel = viewModel
+                                )
+                            }
+                        }
+                        is Route.Settings -> {
+                            NavEntry(key) {
+                                Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val interactionSource = remember { MutableInteractionSource() }
+                                        val isFocused by interactionSource.collectIsFocusedAsState()
+                                        
+                                        Surface(
+                                            onClick = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) },
+                                            shape = CircleShape,
+                                            color = if (isFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            interactionSource = interactionSource,
+                                            modifier = Modifier.size(48.dp).scale(if (isFocused) 1.2f else 1f)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack, 
+                                                    contentDescription = "Back",
+                                                    tint = if (isFocused) Color.White else Color.White.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Text(
+                                            text = "Settings", 
+                                            style = MaterialTheme.typography.titleLarge, 
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                        Text("Settings Screen", color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                        is Route.Devices -> {
+                            NavEntry(key) {
+                                DevicesScreen(
+                                    nsdHelper = nsdHelper,
+                                    onDeviceClick = { device: com.chesko.sendfiles.network.Device ->
+                                        viewModel.sendSelectedFiles(device)
+                                        backStack.add(Route.Transfers(isReceiveMode = false))
+                                        while (backStack.size > 1) backStack.removeAt(0)
+                                    }
+                                ) { 
+                                    if (backStack.size > 1) backStack.removeAt(backStack.size - 1) 
+                                }
+                            }
+                        }
+                        else -> error("Unknown route")
+                    }
+                }
+            }
+        }
     } else {
-        MobileApp(nsdHelper, onRequestStoragePermission)
+        MobileApp(nsdHelper, viewModel, onRequestStoragePermission)
     }
 }
 
@@ -65,14 +279,14 @@ fun MainApp(
 @Composable
 fun MobileApp(
     nsdHelper: NsdHelper,
-    onRequestStoragePermission: () -> Unit
+    viewModel: MainViewModel,
+    onRequestStoragePermission: () -> Unit,
 ) {
     val context = LocalContext.current
-    val viewModel: MainViewModel = viewModel()
     val backStack = rememberNavBackStack(Route.Home)
     val currentRoute = backStack.lastOrNull() ?: Route.Home
 
-    var showExitDialog by remember { mutableStateOf(false) }
+    var showExitDialog by remember { mutableStateOf(value = false) }
 
     BackHandler(enabled = true) {
         if (backStack.size > 1) {
@@ -115,6 +329,13 @@ fun MobileApp(
         }
     }
 
+    val activeTransfers by viewModel.activeTransfers.collectAsState()
+    LaunchedEffect(activeTransfers) {
+        if (activeTransfers.isNotEmpty() && (currentRoute !is Route.Transfers)) {
+            backStack.add(Route.Transfers())
+        }
+    }
+
     @Suppress("DEPRECATION")
     val adaptiveInfo = currentWindowAdaptiveInfo()
     val navSuiteType = NavigationSuiteScaffoldDefaults.calculateFromAdaptiveInfo(adaptiveInfo)
@@ -149,7 +370,7 @@ fun MobileApp(
                 selected = currentRoute is Route.Transfers,
                 onClick = {
                     if (currentRoute !is Route.Transfers) {
-                        backStack.add(Route.Transfers)
+                        backStack.add(Route.Transfers())
                         while (backStack.size > 1) backStack.removeAt(0)
                     }
                 },
@@ -184,32 +405,40 @@ fun MobileApp(
                                     backStack.add(Route.Files)
                                     while (backStack.size > 1) backStack.removeAt(0)
                                 },
-                                onReceiveClick = { backStack.add(Route.Transfers) },
+                                onReceiveClick = { backStack.add(Route.Transfers(isReceiveMode = true)) },
                                 onHistoryClick = { backStack.add(Route.History) },
-                                onTransferClick = { backStack.add(Route.Transfers) }
+                                onTransferClick = { backStack.add(Route.Transfers(isReceiveMode = false)) },
+                                viewModel = viewModel
                             )
                         }
                     }
                     is Route.History -> {
                         NavEntry(key) {
                             val history by viewModel.history.collectAsState()
-                            HistoryScreen(history = history)
+                            HistoryScreen(
+                                history = history,
+                                onBack = null,
+                                viewModel = viewModel
+                            )
                         }
                     }
                     is Route.Files -> {
                         NavEntry(key) {
                             FilesScreen(
                                 onNext = { backStack.add(Route.Devices) },
-                                onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) },
-                                onRequestStoragePermission = onRequestStoragePermission
+                                onBack = null,
+                                onRequestStoragePermission = onRequestStoragePermission,
+                                viewModel = viewModel
                             )
                         }
                     }
                     is Route.Transfers -> {
                         NavEntry(key) {
                             TransfersScreen(
-                                onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) },
-                                nsdHelper = nsdHelper
+                                onBack = null,
+                                nsdHelper = nsdHelper,
+                                isReceiveMode = key.isReceiveMode,
+                                viewModel = viewModel
                             )
                         }
                     }
@@ -217,12 +446,12 @@ fun MobileApp(
                         NavEntry(key) {
                             DevicesScreen(
                                 nsdHelper = nsdHelper,
-                                onDeviceClick = { device ->
+                                onDeviceClick = { device: com.chesko.sendfiles.network.Device ->
                                     viewModel.sendSelectedFiles(device)
-                                    backStack.add(Route.Transfers)
+                                    backStack.add(Route.Transfers(isReceiveMode = false))
                                     while (backStack.size > 1) backStack.removeAt(0)
                                 },
-                                onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) }
+                                onBack = null
                             )
                         }
                     }

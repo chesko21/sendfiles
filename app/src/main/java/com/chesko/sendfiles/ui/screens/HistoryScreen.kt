@@ -3,17 +3,21 @@ package com.chesko.sendfiles.ui.screens
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,6 +35,7 @@ import java.util.*
 @Composable
 fun HistoryScreen(
     history: List<TransferRecord>,
+    onBack: (() -> Unit)? = null,
     viewModel: MainViewModel = viewModel()
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -76,11 +81,34 @@ fun HistoryScreen(
                 .padding(vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (onBack != null) {
+                val interactionSource = remember { MutableInteractionSource() }
+                val isFocused by interactionSource.collectIsFocusedAsState()
+                
+                Surface(
+                    onClick = onBack,
+                    shape = CircleShape,
+                    color = if (isFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    interactionSource = interactionSource,
+                    modifier = Modifier.size(48.dp).scale(if (isFocused) 1.2f else 1f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack, 
+                            contentDescription = "Back",
+                            tint = if (isFocused) Color.White else Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+            }
+
             Text(
                 text = "History",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                color = Color.White
             )
             
             if (history.isNotEmpty()) {

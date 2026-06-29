@@ -13,6 +13,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,6 +25,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -55,9 +60,6 @@ class MainActivity : ComponentActivity() {
                 val sheetState = rememberModalBottomSheetState()
                 
                 LaunchedEffect(Unit) {
-                    nsdHelper.registerService(8888)
-                    nsdHelper.discoverServices()
-                    
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         if (!Environment.isExternalStorageManager()) {
                             showStorageRationale = true
@@ -102,14 +104,32 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+                                val laterInteractionSource = remember { MutableInteractionSource() }
+                                val isLaterFocused by laterInteractionSource.collectIsFocusedAsState()
+                                
                                 TextButton(
                                     onClick = { showStorageRationale = false },
-                                    modifier = Modifier.weight(1f).height(48.dp),
+                                    interactionSource = laterInteractionSource,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .background(
+                                            if (isLaterFocused) MaterialTheme.colorScheme.surfaceVariant 
+                                            else Color.Transparent,
+                                            RoundedCornerShape(12.dp)
+                                        ),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Text("Nanti", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        "Nanti", 
+                                        color = if (isLaterFocused) MaterialTheme.colorScheme.onSurface 
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                                 
+                                val settingsInteractionSource = remember { MutableInteractionSource() }
+                                val isSettingsFocused by settingsInteractionSource.collectIsFocusedAsState()
+
                                 Button(
                                     onClick = {
                                         showStorageRationale = false
@@ -120,7 +140,22 @@ class MainActivity : ComponentActivity() {
                                             startActivity(intent)
                                         }
                                     },
-                                    modifier = Modifier.weight(1f).height(48.dp),
+                                    interactionSource = settingsInteractionSource,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isSettingsFocused) MaterialTheme.colorScheme.primary 
+                                                        else MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = if (isSettingsFocused) MaterialTheme.colorScheme.onPrimary 
+                                                       else MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .scale(if (isSettingsFocused) 1.05f else 1f)
+                                        .border(
+                                            if (isSettingsFocused) 2.dp else 0.dp,
+                                            MaterialTheme.colorScheme.outline,
+                                            RoundedCornerShape(12.dp)
+                                        ),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Text("Pengaturan", fontWeight = FontWeight.Bold)

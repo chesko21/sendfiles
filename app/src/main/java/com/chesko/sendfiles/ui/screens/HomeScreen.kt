@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -36,7 +35,7 @@ fun HomeScreen(
     onReceiveClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onTransferClick: (TransferItemData) -> Unit,
-    viewModel: MainViewModel = viewModel()
+    viewModel: MainViewModel = viewModel(),
 ) {
     val recentTransfers by viewModel.recentTransfers.collectAsStateWithLifecycle()
     val isRegistered by nsdHelper.isServiceRegistered.collectAsStateWithLifecycle()
@@ -81,9 +80,9 @@ fun HomeScreen(
 
         items(
             recentTransfers,
-            key = { it.title + it.detailLeft + it.progress }
+            key = { it.id }
         ) { data ->
-            RecentTransferItem(data, onClick = { onTransferClick(data) })
+            RecentTransferItem(data = data) { onTransferClick(data) }
         }
     }
 }
@@ -164,6 +163,9 @@ fun BentoGrid(
 
 @Composable
 fun SystemReadyStatus(isReady: Boolean) {
+    val ipAddress = remember { com.chesko.sendfiles.util.NetworkUtils.getLocalIpAddress() }
+    val isNetworkOk = ipAddress != null
+
     Surface(
         modifier = Modifier.fillMaxWidth().height(84.dp),
         shape = RoundedCornerShape(32.dp),
@@ -179,29 +181,38 @@ fun SystemReadyStatus(isReady: Boolean) {
                     .size(12.dp)
                     .background(
                         if (isReady) MaterialTheme.colorScheme.secondary 
-                        else MaterialTheme.colorScheme.error, 
+                        else if (!isNetworkOk) MaterialTheme.colorScheme.error
+                        else Color(0xFFFFA500), // Orange for initializing
                         CircleShape
                     )
             )
             Spacer(modifier = Modifier.width(20.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (isReady) stringResource(R.string.system_ready) else "SYSTEM NOT READY", 
+                    text = if (isReady) stringResource(R.string.system_ready) 
+                          else if (!isNetworkOk) "NETWORK OFFLINE"
+                          else "SYSTEM INITIALIZING", 
                     style = MaterialTheme.typography.labelSmall, 
-                    color = MaterialTheme.colorScheme.primary, 
+                    color = if (isReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, 
                     letterSpacing = 2.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
                 Text(
-                    text = if (isReady) stringResource(R.string.network_active) else "Initializing engine...", 
+                    text = if (isReady) stringResource(R.string.network_active) 
+                          else if (!isNetworkOk) "Please check your Wi-Fi"
+                          else "Preparing transfer engine...", 
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
             }
             Icon(
-                imageVector = if (isReady) Icons.Rounded.WifiTethering else Icons.Rounded.WifiTetheringError, 
+                imageVector = if (isReady) Icons.Rounded.WifiTethering 
+                             else if (!isNetworkOk) Icons.Rounded.WifiOff
+                             else Icons.Rounded.WifiTetheringError, 
                 contentDescription = null, 
-                tint = if (isReady) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+                tint = if (isReady) MaterialTheme.colorScheme.secondary 
+                       else if (!isNetworkOk) MaterialTheme.colorScheme.error
+                       else Color(0xFFFFA500),
                 modifier = Modifier.size(28.dp)
             )
         }
@@ -220,6 +231,7 @@ fun RecentTransfersHeader() {
 }
 
 data class TransferItemData(
+    val id: Long,
     val title: String,
     val subtitle: String,
     val progress: Float,
@@ -242,7 +254,7 @@ fun RecentTransferItem(data: TransferItemData, onClick: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier.size(52.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -261,12 +273,22 @@ fun RecentTransferItem(data: TransferItemData, onClick: () -> Unit) {
                         style = MaterialTheme.typography.bodyLarge, 
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(data.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = data.subtitle, 
+                            style = MaterialTheme.typography.bodySmall, 
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         if (!data.isCompleted) {
-                            Text("${(data.progress * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "${(data.progress * 100).toInt()}%", 
+                                style = MaterialTheme.typography.labelMedium, 
+                                color = MaterialTheme.colorScheme.primary, 
+                                fontWeight = FontWeight.Bold
+                            )
                         } else {
                             Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
                         }

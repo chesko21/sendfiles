@@ -15,4 +15,5 @@
     <string name="search_hint">Search for files...</string>
     <string name="storage_available">STORAGE AVAILABLE</string>
     <string name="connected_devices">CONNECTED DEVICES</string>
+    <string name="nav_settings">Settings</string>
 </resources>

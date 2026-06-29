@@ -13,7 +13,10 @@ data class TransferRecord(
     val receiverName: String,
     val status: TransferStatus,
     val timestamp: Long = System.currentTimeMillis(),
-    val direction: TransferDirection
+    val direction: TransferDirection,
+    val fileUri: String? = null,
+    val receiverAddress: String? = null,
+    val receiverPort: Int? = null
 )
 
 enum class TransferStatus {

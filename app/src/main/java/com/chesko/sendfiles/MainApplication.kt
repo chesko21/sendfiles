@@ -11,7 +11,7 @@ class MainApplication : Application(), ImageLoaderFactory {
             .components {
                 add(VideoFrameDecoder.Factory())
             }
-            .crossfade(true)
+            .crossfade(enable = true)
             .build()
     }
 }
